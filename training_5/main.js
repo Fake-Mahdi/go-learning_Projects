@@ -1,9 +1,11 @@
 let btn1= document.getElementById("btn1")
-const obj = { name: "Mahdi", lastname: "boukhouima", age : 27 };
+let btn2= document.getElementById("btn2")
+let display= document.getElementById("display")
+const obj = { name: "Natsu ", lastname: "boukhouima", age : 300 };
 
 const send_data = async () => {
   try {
-    const res = await fetch("http://localhost:8080/AddUser", {
+    const res = await fetch("http://localhost:8080/insertData", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(obj)
@@ -17,7 +19,7 @@ const send_data = async () => {
 };
 const click_me = () =>{
   try {
-    fetch("http://localhost:8080/SendUser", {
+    fetch("http://localhost:8080/selectData", {
     method : "GET",
     headers : {"Content-Type" : "application/json"}
   }).then(response => {
@@ -27,6 +29,13 @@ const click_me = () =>{
     return response.json()
   }).then(data => {
     console.log(data)
+    let Content = ""
+    for(const element of data) {
+      Content += `<ul>
+            <li>${element.name}</li>
+        </ul>`
+    }
+    display.innerHTML = Content
   }).catch(error => {
     console.log(error)
   })
@@ -37,3 +46,4 @@ const click_me = () =>{
 }
 
 btn1.addEventListener("click" , () => click_me())
+btn2.addEventListener("click" , () => {send_data()})

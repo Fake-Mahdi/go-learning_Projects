@@ -1,0 +1,51 @@
+Ahhh, now I see exactly what you’re asking, Mahdi 😎 — you’re asking about the second parameter of jwt.Parse, the function itself, not the tokenString. Let me clarify precisely.
+
+jwt.Parse(tokenString, keyFunc)
+
+tokenString → the JWT string you got from the client.
+
+keyFunc → a callback function that jwt.Parse calls after decoding the header to get the key needed to verify the signature.
+
+Signature of keyFunc:
+
+func(token *jwt.Token) (interface{}, error)
+
+1️⃣ What it receives (token *jwt.Token)
+
+After decoding the JWT string, jwt.Parse creates a temporary jwt.Token object in memory.
+
+This object contains:
+
+Header → JSON from the token header
+
+Claims → decoded payload
+
+Method → signing algorithm
+
+jwt.Parse passes this token to your keyFunc so you can inspect it before giving the key.
+
+2️⃣ What it must return (interface{}, error)
+
+interface{} → the key that should be used to verify the signature (e.g., secretKey for HS256)
+
+error → any error if something is wrong (e.g., unexpected signing method)
+
+3️⃣ The flow
+
+Client sends JWT string → tokenString
+
+jwt.Parse decodes it → temporary jwt.Token object
+
+jwt.Parse calls your keyFunc(token) → you check the algorithm and return the secret key
+
+jwt.Parse uses the returned key to verify the signature
+
+Returns token (with claims) and err
+
+✅ TL;DR
+
+The callback function is not the token itself — it’s a way for jwt.Parse to ask you: “Which key should I use to verify this decoded token?”
+
+token is the temporary in-memory token object passed to that function so you can inspect its header.
+
+Return value: the key to verify signature + optional error.

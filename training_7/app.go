@@ -29,6 +29,10 @@ func enableCORS(w http.ResponseWriter, r *http.Request) bool {
 	}
 	return false
 }
+func handleRootPage(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "This Is The Root Page")
+}
+
 func initDB() {
 	dsn := "root:@tcp(127.0.0.1:3306)/train"
 	var err error
@@ -40,70 +44,62 @@ func initDB() {
 	if err := db.Ping(); err != nil {
 		panic(err)
 	}
-	fmt.Println("Connection is Established")
+	fmt.Println("Connection into database Has Been Established")
 }
 
-func handleRootPage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "This Is The Root Page")
-}
-
-func handleSavedData(name string, lastname string, age int) {
-	query := "insert into user(name , last , age) values(? , ? , ?)"
-	result, err := db.Exec(query, name, lastname, age)
+func savedDataToSql(name string, lastname string, age int) {
+	query := " insert into user values(?, ? , ?)"
+	row, err := db.Exec(query, name, lastname, age)
 	if err != nil {
 		panic(err)
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	fmt.Println("Rows inserted:", rowsAffected)
+	rowsAffected, _ := row.RowsAffected()
+	fmt.Println("rows Inserted : ", rowsAffected)
 }
-
 func handlePostRequest(w http.ResponseWriter, r *http.Request) {
 	if enableCORS(w, r) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "Bad Method Request", http.StatusMethodNotAllowed)
+		http.Error(w, "http this is not the Method", http.StatusMethodNotAllowed)
 		return
 	}
 	if r.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "Bad Method Request", http.StatusUnsupportedMediaType)
+		http.Error(w, "Unsuported Media Type", http.StatusUnsupportedMediaType)
 		return
 	}
 
-	var request User
+	var req User
 	decode := json.NewDecoder(r.Body)
-	if err := decode.Decode(&request); err != nil {
-		http.Error(w, "BadRequest", http.StatusBadRequest)
-		return
+	if err := decode.Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+	}
+	savedDataToSql(req.Name, req.Lastname, req.Age)
+	response := map[string]string{
+		"Message": "The Data was Received",
 	}
 
-	handleSavedData(request.Name, request.Lastname, request.Age)
-	request_answer := map[string]string{
-		"message": "ok",
-	}
 	encode := json.NewEncoder(w)
-	encode.Encode(request_answer)
+	encode.Encode(&response)
 }
-func handleBringData() {
-	result, err := db.Query("select name ,last ,age from user")
+func getDataFromDatabase() {
+	sliceOfUser = nil
+	query := "select * from user"
+	result, err := db.Query(query)
 	if err != nil {
 		panic(err)
 	}
+	defer result.Close()
+	var user User
 	for result.Next() {
-		var name string
-		var lastname string
-		var age int
-		result.Scan(&name, &lastname, &age)
-		mapOfUser := User{Name: name,
-			Lastname: lastname,
-			Age:      age}
-
-		sliceOfUser = append(sliceOfUser, mapOfUser)
+		if err := result.Scan(&user.Name, &user.Lastname, &user.Age); err != nil {
+			panic(err)
+		}
+		sliceOfUser = append(sliceOfUser, user)
 	}
-
-	for _, user := range sliceOfUser {
-		fmt.Printf("name is : %s lastname is : %s and age is : %d \n", user.Name, user.Lastname, user.Age)
+	if err := result.Err(); err != nil {
+		panic(err)
 	}
 }
 func handleGetRequest(w http.ResponseWriter, r *http.Request) {
@@ -111,15 +107,14 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		http.Error(w, "Bad-Method", http.StatusMethodNotAllowed)
+		http.Error(w, "http this is not the Method", http.StatusMethodNotAllowed)
 		return
 	}
 	if r.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "Bad Content-type", http.StatusUnsupportedMediaType)
+		http.Error(w, "Unsuported Media Type", http.StatusUnsupportedMediaType)
 		return
 	}
-	handleBringData()
-
+	getDataFromDatabase()
 	encode := json.NewEncoder(w)
 	encode.Encode(sliceOfUser)
 }
@@ -128,8 +123,8 @@ func main() {
 	initDB()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleRootPage)
-	mux.HandleFunc("/AddUser", handlePostRequest)
-	mux.HandleFunc("/SendUser", handleGetRequest)
+	mux.HandleFunc("/insertData", handlePostRequest)
+	mux.HandleFunc("/selectData", handleGetRequest)
 	fmt.Println("The Server is Listening...")
 	http.ListenAndServe(":8080", mux)
 
