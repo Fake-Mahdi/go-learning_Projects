@@ -12,6 +12,7 @@ const send_data = async () => {
     });
 
     const data = await res.json();
+    localStorage.setItem("token", data.token);
     console.log(data);
   } catch (err) {
     console.error(err);
@@ -45,5 +46,32 @@ const click_me = () =>{
 
 }
 
-btn1.addEventListener("click" , () => click_me())
-btn2.addEventListener("click" , () => {send_data()})
+const send_data2 = async () => {
+  try {
+    // Get the token from localStorage
+    const token = localStorage.getItem("token");
+    console.log(token)
+    const res = await fetch("http://localhost:8080/insertSecondData", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}` // ✅ attach token properly
+      },
+      body: JSON.stringify(obj)
+    });
+
+    // Check if response is ok before parsing JSON
+    if (!res.ok) {
+      throw new Error(`Server error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    console.log("Server response:", data);
+
+  } catch (err) {
+    console.error("Error sending data:", err);
+  }
+};
+
+btn1.addEventListener("click" , () => send_data())
+btn2.addEventListener("click" , () => {send_data2()})
