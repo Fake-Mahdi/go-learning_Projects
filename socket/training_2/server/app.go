@@ -48,12 +48,13 @@ func handleClient(conn net.Conn) {
 	go func() {
 
 		mu.Lock()
-		remoteAdddr := conn.RemoteAddr()
+		remoteAdddr := conn.RemoteAddr().(*net.TCPAddr)
+		ipOnly := remoteAdddr.IP.String()
 		userTemplate := User{
 			Name:      fmt.Sprintf("Client%d", len(users)+1),
 			Conn:      conn,
 			IsActive:  "Active",
-			IpAddress: remoteAdddr.String(),
+			IpAddress: ipOnly,
 		}
 		users = append(users, userTemplate)
 		fmt.Println(users)
@@ -87,6 +88,10 @@ func handleClient(conn net.Conn) {
 				handleCreateRoom(conn, parts[1])
 				continue
 			}
+			if parts[0] == "Invite" {
+				handleInviteMembers(checkMesssage)
+				continue
+			}
 			fmt.Printf("\rClient:> %s\nServer> ", string(realFullMsg))
 		}
 	}()
@@ -104,6 +109,10 @@ func handleClient(conn net.Conn) {
 			broadcastMessage := parts[1]
 			broadcastMessage_bytes := []byte(broadcastMessage)
 			BroadCastMessage(conn, broadcastMessage_bytes)
+			continue
+		}
+		if serverMsg == "DisplayAll" {
+			displayActiveClient()
 			continue
 		}
 		serverMsgLength := make([]byte, 4)
@@ -124,8 +133,13 @@ func handleClient(conn net.Conn) {
 }
 
 func BroadCastMessage(conn net.Conn, broadcast_message []byte) {
+
 	mu.Lock()
-	for _, user := range users {
+	usersCopy := make([]User, len(users))
+	copy(usersCopy, users)
+	mu.Unlock()
+
+	for _, user := range usersCopy {
 		msgLength := make([]byte, 4)
 		binary.BigEndian.PutUint32(msgLength, uint32(len(broadcast_message)))
 
@@ -143,7 +157,7 @@ func BroadCastMessage(conn net.Conn, broadcast_message []byte) {
 		fmt.Print("Server> ")
 
 	}
-	mu.Unlock()
+
 }
 
 func handleCreateRoom(conn net.Conn, roomName string) {
@@ -159,9 +173,83 @@ func handleCreateRoom(conn net.Conn, roomName string) {
 		if users[i].Conn == conn {
 			roomMap := Room{Name: roomName, Admin: &users[i], Members: []*User{&users[i]}}
 			rooms = append(rooms, roomMap)
-			fmt.Printf("The Room With Room Name %s was created", roomName)
+			fmt.Printf("The Room With Room Name %s was created \n", roomName)
 			break
 		}
 
 	}
+	fmt.Print("Server> ")
+}
+
+func handleInviteMembers(listOfMembers string) {
+	splitcheck := strings.Split(listOfMembers, " ")
+	if len(splitcheck) < 3 {
+		fmt.Println("UNFOUNDED COMMAND")
+		return
+	}
+
+	splitList := strings.SplitN(listOfMembers, " ", 3)
+	ipsPart := strings.Split(splitList[1], ",")
+	roomName := splitList[2]
+	var ptrRoom *Room
+	for i := range rooms {
+		if rooms[i].Name == roomName {
+			ptrRoom = &rooms[i]
+			break
+		}
+	}
+
+	if ptrRoom == nil {
+		fmt.Println("The Room Does not Exist")
+		return
+	}
+
+	for ipsIndex := range ipsPart {
+		var userFound *User
+		for userIndex := range users {
+			if users[userIndex].IpAddress == ipsPart[ipsIndex] {
+				userFound = &users[userIndex]
+				break
+			}
+		}
+
+		if userFound == nil {
+			fmt.Println("There is no such user found")
+			continue // <- i think continue is better like if user is not found i this iteration we can just go to next iteration
+		}
+		var alreadyInRoom bool
+		for _, user := range ptrRoom.Members { //<= i dont understand why should i change like ipsIndex i mean each index is scope to a loop ?
+			if user.IpAddress == ipsPart[ipsIndex] { // i have no ip variable i used ipsPart wich contain all ips
+				alreadyInRoom = true
+				break
+			}
+		}
+		if alreadyInRoom == true {
+			continue
+		}
+		ptrRoom.Members = append(ptrRoom.Members, userFound)
+	}
+
+}
+
+func displayActiveClient() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(users) == 0 {
+		fmt.Println("No connected users.")
+		return
+	}
+
+	fmt.Println("┌───────────────────────────────┐")
+	fmt.Println("│        Connected Users        │")
+	fmt.Println("├─────────────┬───────────┬───────────────┤")
+	fmt.Printf("│ %-11s │ %-9s │ %-30s │\n", "Name", "Status", "IP Address")
+	fmt.Println("├─────────────┼───────────┼───────────────┤")
+
+	for _, user := range users {
+		fmt.Printf("│ %-11s │ %-9s │ %-30s │\n", user.Name, user.IsActive, user.IpAddress)
+	}
+
+	fmt.Println("└─────────────┴───────────┴───────────────┘")
 }
