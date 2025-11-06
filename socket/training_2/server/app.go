@@ -7,10 +7,28 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
+	"sync"
 )
 
+type User struct {
+	Name      string
+	Conn      net.Conn
+	IsActive  string
+	IpAddress string
+}
+type Room struct {
+	Name    string
+	Admin   *User
+	Members []*User
+}
+
+var rooms []Room
+var users []User
+var mu sync.Mutex
+
 func main() {
-	listener, err := net.Listen("tcp", ":8080")
+	listener, err := net.Listen("tcp", "0.0.0.0:8080")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -28,6 +46,19 @@ func main() {
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 	go func() {
+
+		mu.Lock()
+		remoteAdddr := conn.RemoteAddr()
+		userTemplate := User{
+			Name:      fmt.Sprintf("Client%d", len(users)+1),
+			Conn:      conn,
+			IsActive:  "Active",
+			IpAddress: remoteAdddr.String(),
+		}
+		users = append(users, userTemplate)
+		fmt.Println(users)
+		mu.Unlock()
+
 		for {
 			commingMsgLength := make([]byte, 4)
 			_, err := io.ReadFull(conn, commingMsgLength)
@@ -50,6 +81,12 @@ func handleClient(conn net.Conn) {
 				fmt.Println("Problem Reading Here", err)
 				return
 			}
+			checkMesssage := string(realFullMsg)
+			parts := strings.SplitN(checkMesssage, " ", 2)
+			if parts[0] == "room" {
+				handleCreateRoom(conn, parts[1])
+				continue
+			}
 			fmt.Printf("\rClient:> %s\nServer> ", string(realFullMsg))
 		}
 	}()
@@ -60,6 +97,14 @@ func handleClient(conn net.Conn) {
 		serverMsg := scanner.Text()
 		if serverMsg == "exit" {
 			return
+		}
+		parts := strings.SplitN(serverMsg, " ", 2)
+
+		if parts[0] == "broadcast" {
+			broadcastMessage := parts[1]
+			broadcastMessage_bytes := []byte(broadcastMessage)
+			BroadCastMessage(conn, broadcastMessage_bytes)
+			continue
 		}
 		serverMsgLength := make([]byte, 4)
 		fullServerMsg := []byte(serverMsg)
@@ -75,5 +120,48 @@ func handleClient(conn net.Conn) {
 			fmt.Println("Enable to send Message to Client")
 		}
 		fmt.Print("Server> ")
+	}
+}
+
+func BroadCastMessage(conn net.Conn, broadcast_message []byte) {
+	mu.Lock()
+	for _, user := range users {
+		msgLength := make([]byte, 4)
+		binary.BigEndian.PutUint32(msgLength, uint32(len(broadcast_message)))
+
+		if _, err := user.Conn.Write(msgLength); err != nil {
+			fmt.Println("Enable to Write to msg Length Size to Client")
+			continue
+		}
+
+		_, err := user.Conn.Write(broadcast_message)
+		if err != nil {
+			fmt.Println("Enable to send Message to Client")
+			continue
+		}
+		fmt.Println("this is the broadcast")
+		fmt.Print("Server> ")
+
+	}
+	mu.Unlock()
+}
+
+func handleCreateRoom(conn net.Conn, roomName string) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, room := range rooms {
+		if room.Name == roomName {
+			fmt.Println("This is Room already exit chose an other name")
+			return
+		}
+	}
+	for i := range users {
+		if users[i].Conn == conn {
+			roomMap := Room{Name: roomName, Admin: &users[i], Members: []*User{&users[i]}}
+			rooms = append(rooms, roomMap)
+			fmt.Printf("The Room With Room Name %s was created", roomName)
+			break
+		}
+
 	}
 }
