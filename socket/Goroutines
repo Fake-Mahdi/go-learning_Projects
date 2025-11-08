@@ -1,0 +1,18 @@
+GoRoutines are huge and one of most aspect that can take ur Go level into a higher levels
+So what are goroutine : 
+            goroutine are light weight threat that run inside a threat managed by the Go runtime also they run asynchronos
+            how they give advantage : 
+                first we need to understand what are threat threat are task that schuddle by OS the kernel used by process
+                a process is a living instance of program mean each function or task inside a program need a threat
+                    threat disadvantage : they are slow to creat and very consuming
+                        here when Goroutine shine they lived inside threat and they are fast to creat plus u can run more than one inside a threat wich is huge for
+                        performance plus they are managed by Go-runtime exactly by go schudle wich help us to creat true high performance concurency and real pallarism
+                        go Routines lived and dies why Main goroutine 
+
+
+NOTES FOR ME IN THE FUTURE:
+
+1- while coding keep in mind that Goroutines are for async operation mean that task that i want to run in concurency should not be linked also for max and clean code
+used channel to transfer data between Goroutine
+2- runing multipe GO routine does not guarnte performance cause they lived in same threat mean same Cpu cors this can creat a problem u need to mange them
+equally between cors of cpu

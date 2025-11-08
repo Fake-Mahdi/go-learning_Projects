@@ -83,13 +83,17 @@ func handleClient(conn net.Conn) {
 				return
 			}
 			checkMesssage := string(realFullMsg)
-			parts := strings.SplitN(checkMesssage, " ", 2)
+			parts := strings.SplitN(checkMesssage, " ", 3)
 			if parts[0] == "room" {
 				handleCreateRoom(conn, parts[1])
 				continue
 			}
 			if parts[0] == "Invite" {
 				handleInviteMembers(checkMesssage)
+				continue
+			}
+			if parts[0] == "Access" && parts[1] == "room" {
+				go handleEnterTheRoom(conn, parts[2])
 				continue
 			}
 			fmt.Printf("\rClient:> %s\nServer> ", string(realFullMsg))
@@ -113,6 +117,10 @@ func handleClient(conn net.Conn) {
 		}
 		if serverMsg == "DisplayAll" {
 			displayActiveClient()
+			continue
+		}
+		if serverMsg == "DisplayMembers" {
+			DisplayRoomData()
 			continue
 		}
 		serverMsgLength := make([]byte, 4)
@@ -203,7 +211,7 @@ func handleInviteMembers(listOfMembers string) {
 		fmt.Println("The Room Does not Exist")
 		return
 	}
-
+	//Here i have made the loop using index and not element cause of go element is copy and does not have the real memory address that we need to point for to find the user
 	for ipsIndex := range ipsPart {
 		var userFound *User
 		for userIndex := range users {
@@ -215,7 +223,7 @@ func handleInviteMembers(listOfMembers string) {
 
 		if userFound == nil {
 			fmt.Println("There is no such user found")
-			continue // <- i think continue is better like if user is not found i this iteration we can just go to next iteration
+			continue // Here will skip this iteration cause this iterartion index does not have the client wants to add
 		}
 		var alreadyInRoom bool
 		for _, user := range ptrRoom.Members { //<= i dont understand why should i change like ipsIndex i mean each index is scope to a loop ?
@@ -252,4 +260,128 @@ func displayActiveClient() {
 	}
 
 	fmt.Println("└─────────────┴───────────┴───────────────┘")
+}
+func handleInterRoomMsg(conn net.Conn, clientMessage string, ptrRoom *Room) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	msgLength := make([]byte, 4)
+	msgBytes := []byte(clientMessage)
+	binary.BigEndian.PutUint32(msgLength, uint32(len(msgBytes)))
+
+	for _, member := range ptrRoom.Members {
+
+		if member.Conn == conn {
+			continue
+		}
+
+		if _, err := member.Conn.Write(msgLength); err != nil {
+			fmt.Println("Failed to send message length:", err)
+			continue
+		}
+
+		if _, err := member.Conn.Write(msgBytes); err != nil {
+			fmt.Println("Failed to send message:", err)
+			continue
+		}
+	}
+
+	fmt.Print("Server> ")
+}
+func handleInterRoomListening(conn *net.Conn, ptrRoom *Room) {
+	go func() {
+		for {
+			commingMsgLength := make([]byte, 4)
+			_, err := io.ReadFull(*conn, commingMsgLength)
+			if err != nil {
+				if err == io.EOF {
+					fmt.Println("The Data Has Reached Here end")
+					return
+				}
+				fmt.Println("Problem Reading Here")
+				return
+			}
+			fullMsgLength := binary.BigEndian.Uint32(commingMsgLength)
+
+			realFullMsg := make([]byte, fullMsgLength)
+			if _, err := io.ReadFull(*conn, realFullMsg); err != nil {
+				if err == io.EOF {
+					fmt.Println("The Data Has Reached Here end")
+					return
+				}
+				fmt.Println("Problem Reading Here", err)
+				return
+			}
+			checkMesssage := string(realFullMsg)
+			fmt.Printf("\rClient:> %s\nServer> ", checkMesssage)
+			handleInterRoomMsg(*conn, checkMesssage, ptrRoom)
+		}
+	}()
+}
+func handleEnterTheRoom(conn net.Conn, roomName string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	userExist := false
+	var UserIp string
+	var UserName string
+	roomExist := false
+	for _, user := range users {
+		if user.Conn == conn {
+			userExist = true
+			UserIp = user.IpAddress
+			UserName = user.Name
+			break
+		}
+	}
+	if userExist == false {
+		fmt.Println("user does not exist")
+		return
+	}
+	var adminName *User
+	var ptrRoom *Room
+	for i, room := range rooms {
+		if room.Name == roomName {
+			adminName = room.Admin
+			roomExist = true
+			ptrRoom = &rooms[i]
+			for _, roomMember := range ptrRoom.Members {
+				if roomMember.IpAddress == UserIp {
+					if UserName == adminName.Name {
+						serverMsg := "Welcome to the room Admin"
+						msgLength := make([]byte, 4)
+						fullMsg := []byte(serverMsg)
+						binary.BigEndian.PutUint32(msgLength, uint32(len(fullMsg)))
+
+						if _, err := conn.Write(msgLength); err != nil {
+							fmt.Println("Enable to Write to msg Length Size to Client")
+							return
+						}
+						_, err := conn.Write(fullMsg)
+						if err != nil {
+							fmt.Println("it was error During Message Sending")
+						}
+
+					}
+				}
+			}
+		}
+	}
+	if roomExist != true { // this is the room check mean if not true it will show the message and return cause inside if == room it will continue
+		fmt.Println("Room does Not Exist Try Create one")
+		return
+	}
+	fmt.Print("Server> ")
+}
+
+func DisplayRoomData() {
+	for i := range rooms {
+		fmt.Printf("Room NAME : %s and Room ADMIN : %s \n", rooms[i].Name, rooms[i].Admin.Name)
+	}
+
+	for i := range rooms {
+		for _, member := range rooms[i].Members {
+			fmt.Println(member.IpAddress)
+		}
+	}
 }
