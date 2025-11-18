@@ -16,6 +16,8 @@ type User struct {
 	Conn      net.Conn
 	IsActive  string
 	IpAddress string
+	Mode      string
+	RoomPtr   *Room
 }
 type Room struct {
 	Name    string
@@ -55,6 +57,8 @@ func handleClient(conn net.Conn) {
 			Conn:      conn,
 			IsActive:  "Active",
 			IpAddress: ipOnly,
+			Mode:      "normal",
+			RoomPtr:   nil,
 		}
 		users = append(users, userTemplate)
 		fmt.Println(users)
@@ -84,6 +88,12 @@ func handleClient(conn net.Conn) {
 			}
 			checkMesssage := string(realFullMsg)
 			parts := strings.SplitN(checkMesssage, " ", 3)
+			var user *User
+			for i := range users {
+				if users[i].Conn == conn {
+					user = &users[i]
+				}
+			}
 			if parts[0] == "room" {
 				handleCreateRoom(conn, parts[1])
 				continue
@@ -95,6 +105,9 @@ func handleClient(conn net.Conn) {
 			if parts[0] == "Access" && parts[1] == "room" {
 				go handleEnterTheRoom(conn, parts[2])
 				continue
+			}
+			if user.Mode != "normal" {
+				handleInterRoomMsg(conn, checkMesssage, user.RoomPtr)
 			}
 			fmt.Printf("\rClient:> %s\nServer> ", string(realFullMsg))
 		}
@@ -262,37 +275,38 @@ func displayActiveClient() {
 	fmt.Println("└─────────────┴───────────┴───────────────┘")
 }
 func handleInterRoomMsg(conn net.Conn, clientMessage string, ptrRoom *Room) {
-	mu.Lock()
-	defer mu.Unlock()
 
-	msgLength := make([]byte, 4)
-	msgBytes := []byte(clientMessage)
-	binary.BigEndian.PutUint32(msgLength, uint32(len(msgBytes)))
+	go func() {
 
-	for _, member := range ptrRoom.Members {
+		msgLength := make([]byte, 4)
+		msgBytes := []byte(clientMessage)
+		binary.BigEndian.PutUint32(msgLength, uint32(len(msgBytes)))
 
-		if member.Conn == conn {
-			continue
+		for _, member := range ptrRoom.Members {
+
+			if member.Conn == conn {
+				continue
+			}
+
+			if _, err := member.Conn.Write(msgLength); err != nil {
+				fmt.Println("Failed to send message length:", err)
+				continue
+			}
+
+			if _, err := member.Conn.Write(msgBytes); err != nil {
+				fmt.Println("Failed to send message:", err)
+				continue
+			}
+			fmt.Print("Server> ")
 		}
 
-		if _, err := member.Conn.Write(msgLength); err != nil {
-			fmt.Println("Failed to send message length:", err)
-			continue
-		}
-
-		if _, err := member.Conn.Write(msgBytes); err != nil {
-			fmt.Println("Failed to send message:", err)
-			continue
-		}
-	}
-
-	fmt.Print("Server> ")
+	}()
 }
-func handleInterRoomListening(conn *net.Conn, ptrRoom *Room) {
+func handleInterRoomListening(conn net.Conn, ptrRoom *Room) {
 	go func() {
 		for {
 			commingMsgLength := make([]byte, 4)
-			_, err := io.ReadFull(*conn, commingMsgLength)
+			_, err := io.ReadFull(conn, commingMsgLength)
 			if err != nil {
 				if err == io.EOF {
 					fmt.Println("The Data Has Reached Here end")
@@ -304,7 +318,7 @@ func handleInterRoomListening(conn *net.Conn, ptrRoom *Room) {
 			fullMsgLength := binary.BigEndian.Uint32(commingMsgLength)
 
 			realFullMsg := make([]byte, fullMsgLength)
-			if _, err := io.ReadFull(*conn, realFullMsg); err != nil {
+			if _, err := io.ReadFull(conn, realFullMsg); err != nil {
 				if err == io.EOF {
 					fmt.Println("The Data Has Reached Here end")
 					return
@@ -314,7 +328,6 @@ func handleInterRoomListening(conn *net.Conn, ptrRoom *Room) {
 			}
 			checkMesssage := string(realFullMsg)
 			fmt.Printf("\rClient:> %s\nServer> ", checkMesssage)
-			handleInterRoomMsg(*conn, checkMesssage, ptrRoom)
 		}
 	}()
 }
@@ -325,12 +338,15 @@ func handleEnterTheRoom(conn net.Conn, roomName string) {
 	userExist := false
 	var UserIp string
 	var UserName string
+	var ptrUser *User
 	roomExist := false
-	for _, user := range users {
+	for i, user := range users {
 		if user.Conn == conn {
 			userExist = true
 			UserIp = user.IpAddress
 			UserName = user.Name
+			users[i].Mode = "Inroom"
+			ptrUser = &users[i]
 			break
 		}
 	}
@@ -345,6 +361,7 @@ func handleEnterTheRoom(conn net.Conn, roomName string) {
 			adminName = room.Admin
 			roomExist = true
 			ptrRoom = &rooms[i]
+			ptrUser.RoomPtr = ptrRoom
 			for _, roomMember := range ptrRoom.Members {
 				if roomMember.IpAddress == UserIp {
 					if UserName == adminName.Name {
@@ -361,8 +378,26 @@ func handleEnterTheRoom(conn net.Conn, roomName string) {
 						if err != nil {
 							fmt.Println("it was error During Message Sending")
 						}
+						return
 
 					}
+
+					serverMsg := "Welcome to the room Member"
+					msgLength := make([]byte, 4)
+					fullMsg := []byte(serverMsg)
+					binary.BigEndian.PutUint32(msgLength, uint32(len(fullMsg)))
+
+					if _, err := conn.Write(msgLength); err != nil {
+						fmt.Println("Enable to Write to msg Length Size to Client")
+						return
+					}
+					_, err := conn.Write(fullMsg)
+					if err != nil {
+						fmt.Println("it was error During Message Sending")
+					}
+
+					return
+
 				}
 			}
 		}

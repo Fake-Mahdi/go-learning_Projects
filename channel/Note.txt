@@ -1,0 +1,2 @@
+it's fucking hard to control go Routine the best choise is limit them using channel
+by passing slice as channel u can make each go routine process an information

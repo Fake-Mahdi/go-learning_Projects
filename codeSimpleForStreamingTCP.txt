@@ -1,0 +1,75 @@
+func getDataFromDatabaseStream() (<-chan []byte, <-chan error) {
+	dataChan := make(chan []byte)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(dataChan)
+		defer close(errChan)
+
+		rows, err := db.Query("SELECT name, lastname, age FROM user")
+		if err != nil {
+			errChan <- err
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var user User
+			if err := rows.Scan(&user.Name, &user.Lastname, &user.Age); err != nil {
+				errChan <- err
+				return
+			}
+
+			// Convert user struct to JSON bytes
+			jsonBytes, err := json.Marshal(user)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			dataChan <- jsonBytes // send to channel
+		}
+
+		if err := rows.Err(); err != nil {
+			errChan <- err
+			return
+		}
+	}()
+
+	return dataChan, errChan
+}
+ 
+
+ Database
+
+
+
+ handling func handleGetRequest(w http.ResponseWriter, r *http.Request) {
+	if enableCORS(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "HTTP method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	dataChan, errChan := getDataFromDatabaseStream()
+
+	for data := range dataChan {
+		// Write each row immediately
+		w.Write(data)
+		w.Write([]byte("\n")) // optional: separate rows for readability
+
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush() // send immediately
+		}
+	}
+
+	if err := <-errChan; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
